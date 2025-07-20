@@ -147,8 +147,6 @@
             const recordTitle = document.getElementById('record-title');
             const recordText = document.getElementById('record-text');
             const leaderboardDiv = document.getElementById('leaderboard');
-            // AJUSTE: Listener explícito para o botão de "Jogar Novamente".
-            const playAgainButton = document.getElementById('play-again-button');
 
             // --- EFEITOS SONOROS ---
             const flapSound = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0 } }).toDestination();
@@ -208,12 +206,18 @@
                 renderLeaderboard();
             }
 
-            // --- Variáveis do Jogo ---
-            // AJUSTE: Usando 'const' para valores que são recalculados, mas não alterados no loop.
-            let bat, obstacles, score, bestScore, gameState, frameCount;
-            let gravity, lift, obstacleWidth, obstacleGap, obstacleSpeed, obstacleInterval, batSize;
-            
+            // Variáveis do Jogo
+            let bat, obstacles, score, bestScore, gameState;
             bestScore = localStorage.getItem('flappyBatBestScore') || 0;
+
+            let gravity = 0.5;
+            let lift = -8;
+            let obstacleWidth = 60;
+            let obstacleGap = 150;
+            let obstacleSpeed = 3;
+            let obstacleInterval = 90; 
+            let batSize = 40; 
+            let frameCount = 0;
 
             function setGameScale() {
                 const screenWidth = canvas.width;
@@ -223,18 +227,12 @@
                 obstacleWidth = screenWidth * 0.15;
                 obstacleGap = screenWidth * 0.375;
                 batSize = screenWidth * 0.1;
-                obstacleInterval = 90; // Mantido fixo para consistência do desafio
             }
 
             function resizeCanvas() {
                 canvas.width = canvas.clientWidth;
                 canvas.height = canvas.clientHeight;
                 setGameScale();
-                // AJUSTE: Não reinicia o jogo inteiro ao redimensionar, apenas redesenha se estiver no estado inicial.
-                if (gameState !== 'playing' && gameState !== 'gameOver') {
-                    init();
-                    draw(); // Garante que a tela de início seja redesenhada com as novas dimensões
-                }
             }
 
             function init() {
@@ -248,12 +246,8 @@
                 Tone.Transport.cancel();
             }
 
-            function flap(event) {
-                // AJUSTE: Previne que o clique/toque propague para outros elementos desnecessariamente.
-                if (event) event.preventDefault();
-                
+            function flap() {
                 if (Tone.context.state !== 'running') { Tone.start(); }
-                
                 if (gameState === 'playing') {
                     bat.velocity = lift;
                     flapSound.triggerAttackRelease("0.05");
@@ -276,16 +270,13 @@
             }
 
             function drawObstacles() {
-                ctx.fillStyle = '#848482'; // Cor das estalactites/estalagmites
+                ctx.fillStyle = '#848482';
                 obstacles.forEach(obstacle => {
-                    // Desenha estalactite (de cima)
                     ctx.beginPath();
                     ctx.moveTo(obstacle.x, 0);
                     ctx.lineTo(obstacle.x + obstacleWidth, 0);
                     ctx.lineTo(obstacle.x + obstacleWidth / 2, obstacle.topHeight);
                     ctx.fill();
-                    
-                    // Desenha estalagmite (de baixo)
                     ctx.beginPath();
                     ctx.moveTo(obstacle.x, canvas.height);
                     ctx.lineTo(obstacle.x + obstacleWidth, canvas.height);
@@ -298,11 +289,7 @@
                 ctx.fillStyle = 'white';
                 ctx.font = `bold ${canvas.width * 0.09}px 'Poppins'`;
                 ctx.textAlign = 'center';
-
-                if (gameState === 'playing' || gameState === 'gameOver') {
-                    ctx.fillText(score, canvas.width / 2, canvas.height * 0.1);
-                }
-
+                ctx.fillText(score, canvas.width / 2, canvas.height * 0.1);
                 if (gameState === 'gameOver' && platformRecordMessage.classList.contains('hidden')) {
                     ctx.font = `bold ${canvas.width * 0.12}px 'Poppins'`;
                     ctx.fillText('Fim de Jogo', canvas.width / 2, canvas.height / 2 - canvas.height * 0.1);
@@ -319,90 +306,61 @@
             
             function update() {
                 if (gameState !== 'playing') return;
-
                 frameCount++;
                 bat.velocity += gravity;
                 bat.y += bat.velocity;
-
-                // Colisão com o teto ou chão
-                if (bat.y > canvas.height - batSize / 2 || bat.y < batSize / 2) {
-                    gameOver();
-                }
-
-                // Gera novos obstáculos
+                if (bat.y > canvas.height - batSize / 2 || bat.y < batSize / 2) gameOver();
                 if (frameCount % obstacleInterval === 0) {
                     const topHeight = Math.random() * (canvas.height - obstacleGap - (canvas.height * 0.1)) + (canvas.height * 0.05);
                     obstacles.push({ x: canvas.width, topHeight, bottomHeight: canvas.height - topHeight - obstacleGap, passed: false });
                 }
-
-                // Move e verifica colisão com obstáculos
                 obstacles.forEach(obstacle => {
                     obstacle.x -= obstacleSpeed;
-                    
-                    // Lógica de colisão
-                    const hitBox = batSize * 0.4; // Hitbox um pouco menor para ser mais justo
-                    if ( bat.x + hitBox > obstacle.x && bat.x - hitBox < obstacle.x + obstacleWidth && (bat.y - hitBox < obstacle.topHeight || bat.y + hitBox > canvas.height - obstacle.bottomHeight)) {
-                        gameOver();
-                    }
-                    
-                    // Lógica de pontuação
+                    const hitBox = batSize * 0.4;
+                    if ( bat.x + hitBox > obstacle.x && bat.x - hitBox < obstacle.x + obstacleWidth && (bat.y - hitBox < obstacle.topHeight || bat.y + hitBox > canvas.height - obstacle.bottomHeight)) gameOver();
                     if (obstacle.x + obstacleWidth < bat.x && !obstacle.passed) {
                         score++;
                         scoreSound.triggerAttackRelease("C6", "8n");
                         obstacle.passed = true;
                     }
                 });
-
-                // Remove obstáculos que saíram da tela
                 obstacles = obstacles.filter(obstacle => obstacle.x + obstacleWidth > 0);
             }
 
             function draw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawObstacles();
                 drawBat();
+                drawObstacles();
                 drawScore();
             }
             
             function gameOver() {
-                // BUGFIX CRÍTICO: Impede que a função seja chamada múltiplas vezes por um único evento de "morte".
                 if (gameState !== 'playing') return;
-                
                 hitSound.triggerAttackRelease("C2", "4n");
                 gameState = 'gameOver';
-                
                 const previousBestScore = bestScore;
-                
                 if (score > bestScore) {
                     bestScore = score;
                     localStorage.setItem('flappyBatBestScore', bestScore);
                 }
-                
                 const newRank = updateLeaderboard(score);
-                let shouldPlayMelody = false;
-                
+                if (newRank > 0) {
+                     Tone.Transport.start();
+                }
                 if (newRank === 1) {
                     recordTitle.textContent = "NOVO RECORDE!";
                     recordText.innerHTML = `Você assumiu o 1º lugar com <strong>${score}</strong> pontos!`;
                     platformRecordMessage.classList.remove('hidden');
                     setTimeout(() => platformRecordMessage.classList.remove('opacity-0'), 10);
                     platformRecordMelody.start();
-                    shouldPlayMelody = true;
                 } else if (newRank > 1) {
                     recordTitle.textContent = "TOP 3!";
                     recordText.innerHTML = `Você conquistou o <strong>${newRank}º lugar</strong> com <strong>${score}</strong> pontos!`;
                     platformRecordMessage.classList.remove('hidden');
                     setTimeout(() => platformRecordMessage.classList.remove('opacity-0'), 10);
                     personalRecordMelody.start();
-                    shouldPlayMelody = true;
-                } else if (score > previousBestScore && score > 0) { // AJUSTE: Toca a melodia de recorde pessoal mesmo se não entrar no Top 3.
+                } else if (score > previousBestScore) {
                     personalRecordMelody.start();
-                    shouldPlayMelody = true;
-                }
-
-                // AJUSTE: Garante que o transporte de áudio comece para qualquer melodia.
-                if (shouldPlayMelody && Tone.Transport.state !== 'started') {
-                     Tone.Transport.start();
                 }
             }
 
@@ -412,28 +370,23 @@
                 requestAnimationFrame(gameLoop);
             }
 
-            // --- INICIALIZAÇÃO E EVENT LISTENERS ---
-            window.addEventListener('resize', resizeCanvas);
-            
-            canvas.addEventListener('click', flap);
-            canvas.addEventListener('touchstart', flap);
-            
-            // AJUSTE: Adiciona listener ao botão específico e ao overlay inteiro.
-            platformRecordMessage.addEventListener('click', flap);
-            playAgainButton.addEventListener('click', flap);
-
-            window.addEventListener('keydown', (e) => {
-                if (e.code === 'Space') {
-                    e.preventDefault(); // Previne que a página role ao apertar espaço.
-                    flap(e);
-                }
+            // Iniciar o jogo
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+                init();
             });
-
-            // --- Iniciar o Jogo ---
+            
             loadLeaderboard();
-            resizeCanvas(); // Chama para configurar as dimensões e escalas iniciais.
-            // init() e draw() já são chamados por resizeCanvas, então não precisa aqui.
+            resizeCanvas();
+            init();
             gameLoop();
+            
+            // Adiciona evento de clique para reiniciar
+            canvas.addEventListener('click', flap);
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); flap(); });
+            window.addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); flap(); } });
+            // Adiciona evento de clique ao overlay de recorde
+            platformRecordMessage.addEventListener('click', flap);
         });
     </script>
 </body>
